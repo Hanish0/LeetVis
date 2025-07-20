@@ -51,14 +51,32 @@ python main.py
 
 The API will be available at `http://localhost:8000`
 
-## Deployment
+## Deployment (100% Free Options)
 
-This backend is configured for deployment on Railway:
+### Option 1: Render (Recommended - Completely Free)
+1. Go to [render.com](https://render.com) and sign up
+2. Connect your GitHub repository
+3. Create a new "Web Service"
+4. Render will automatically detect the `render.yaml` configuration
+5. Deploy with 0 cost on the free tier
 
-1. Connect your GitHub repository to Railway
-2. Railway will automatically detect the Python project
-3. The `Procfile` and `railway.json` configure the deployment settings
-4. Environment variables can be set in Railway dashboard
+### Option 2: Vercel (Serverless)
+1. Install Vercel CLI: `npm i -g vercel`
+2. Run `vercel` in the backend directory
+3. Follow the prompts to deploy
+4. Uses the `vercel.json` configuration
+
+### Option 3: PythonAnywhere (Free Tier)
+1. Sign up at [pythonanywhere.com](https://pythonanywhere.com)
+2. Upload your code to their file system
+3. Configure a web app using the `wsgi.py` file
+4. Free tier includes 512MB storage and limited CPU
+
+### Option 4: Heroku (Free Alternative)
+Use platforms like:
+- **Fly.io** (free tier available)
+- **Deta Space** (completely free)
+- **Glitch** (free for small projects)
 
 ## Project Structure
 
@@ -66,7 +84,8 @@ This backend is configured for deployment on Railway:
 backend/
 ├── main.py              # FastAPI application
 ├── requirements.txt     # Python dependencies
-├── Procfile            # Railway deployment config
-├── railway.json        # Railway deployment settings
+├── render.yaml         # Render deployment config (free)
+├── vercel.json         # Vercel deployment config (free)
+├── wsgi.py             # PythonAnywhere WSGI config (free)
 └── videos/             # Generated video storage (created automatically)
 ```

@@ -13,7 +13,7 @@ app = FastAPI(title="LeetCode Video Generator API", version="1.0.0")
 # Add CORS middleware to allow frontend connections
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify your frontend domain
+    allow_origins=["http://localhost:3000","https://leet-vis.vercel.app"],  # In production, specify your frontend domain
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -133,7 +133,8 @@ async def fetch_problem_details(problem_title: str):
     
     return mock_problems.get(normalized_title)
 
+# Create videos directory if it doesn't exist
+os.makedirs("videos", exist_ok=True)
+
 if __name__ == "__main__":
-    # Create videos directory if it doesn't exist
-    os.makedirs("videos", exist_ok=True)
     uvicorn.run(app, host="0.0.0.0", port=8000)
