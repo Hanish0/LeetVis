@@ -1,13 +1,16 @@
 # LeetCode Video Generator Backend
 
-FastAPI backend for generating LeetCode problem explanation videos.
+FastAPI backend for generating LeetCode problem explanation videos with Supabase database integration.
 
 ## Features
 
 - **Video Generation**: Generates videos for LeetCode problems based on user input
-- **Problem Fetching**: Automatically fetches problem details when given a problem title
+- **Database Integration**: Uses Supabase for storing video metadata and problem details
+- **LeetCode API Integration**: Fetches real problem details from LeetCode GraphQL API
+- **Smart Caching**: Checks database first, then fetches from LeetCode API if needed
+- **Problem Storage**: Automatically stores fetched problems in database for future use
 - **Video Serving**: Serves generated videos directly for playback in the frontend
-- **Caching**: Checks for existing videos to avoid regeneration
+- **Video Caching**: Checks database for existing videos to avoid regeneration
 
 ## API Endpoints
 
@@ -36,6 +39,40 @@ Generate a video for a LeetCode problem.
 Retrieve and stream a generated video file for direct playback.
 
 **Response:** Video file (MP4) for direct playback in browser
+
+### GET /api/problem/{title}
+Get details of a problem by its title. First checks the database, then fetches from LeetCode if not found.
+
+**Response:**
+```json
+{
+  "title": "Two Sum",
+  "difficulty": "Easy",
+  "content": "Given an array of integers nums and an integer target...",
+  "url": "https://leetcode.com/problems/two-sum/"
+}
+```
+
+
+
+## Database Setup
+
+This backend uses Supabase as the database. Follow these steps to set up:
+
+1. **Create a Supabase project:**
+   - Go to [supabase.com](https://supabase.com) and create a free account
+   - Create a new project
+
+2. **Set up environment variables:**
+   - Copy `.env.example` to `.env`
+   - Add your Supabase URL and anon key from your project settings
+
+3. **Create database tables:**
+   - Run the initialization script to see the SQL commands:
+   ```bash
+   python -m database.init
+   ```
+   - Copy and run the SQL commands in your Supabase SQL Editor
 
 ## Local Development
 
@@ -84,6 +121,11 @@ Use platforms like:
 backend/
 ├── main.py              # FastAPI application
 ├── requirements.txt     # Python dependencies
+├── database/            # Database package
+│   ├── __init__.py     # Package initialization
+│   ├── client.py       # Supabase client configuration
+│   ├── service.py      # Database service operations
+│   └── init.py         # Database initialization script
 ├── render.yaml         # Render deployment config (free)
 ├── vercel.json         # Vercel deployment config (free)
 ├── wsgi.py             # PythonAnywhere WSGI config (free)
