@@ -18,20 +18,21 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 VIDEOS_TABLE = "videos"
 PROBLEMS_TABLE = "problems"
 
+# Create Supabase client
+try:
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+except Exception as e:
+    print(f"Failed to create Supabase client: {e}")
+    raise
+
 class SupabaseClient:
     """Wrapper class for Supabase operations"""
     
     def __init__(self):
-        self._client = None
+        self.client = supabase
     
     def get_client(self) -> Client:
-        if self._client is None:
-            try:
-                self._client = create_client(SUPABASE_URL, SUPABASE_KEY)
-            except Exception as e:
-                print(f"Error creating Supabase client: {e}")
-                raise
-        return self._client
+        return self.client
 
 # Global instance
 db_client = SupabaseClient()
