@@ -7,3 +7,4 @@ httpx>=0.23.0,<0.24.0
 supabase==1.0.3
 python-dotenv==1.0.0
 groq
+manim

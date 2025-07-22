@@ -9,6 +9,8 @@ import requests
 import json
 import httpx
 from database.service import DatabaseService
+from solution_generator.generator import SolutionGenerator
+from manim_generator.service import ManimVideoService
 
 app = FastAPI(title="LeetCode Video Generator API", version="1.0.0")
 
@@ -89,12 +91,34 @@ async def generate_video(request: VideoRequest):
                 status="ready"
             )
         
-        # For now, return generating status (actual video generation will be implemented later)
-        return VideoResponse(
-            video_id=video_id,
-            video_url=f"/api/video/{video_id}",
-            status="generating"
-        )
+        # Generate solution code first (placeholder - will be implemented in task 5)
+        solution_code = f"""
+def solution():
+    # Placeholder solution for {request.problem_title}
+    # Language: {request.language}
+    # Type: {request.video_type}
+    pass
+"""
+        
+        try:
+            # Generate Manim script
+            script_content = manim_service.generate_script_only(
+                problem_details, 
+                solution_code, 
+                request.language, 
+                request.video_type
+            )
+            
+            # For now, just return the script generation success
+            # Video rendering will be implemented in task 7
+            return VideoResponse(
+                video_id=video_id,
+                video_url=f"/api/video/{video_id}",
+                status="generating"
+            )
+            
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Script generation failed: {str(e)}")
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Video generation failed: {str(e)}")
@@ -253,6 +277,50 @@ async def get_problem_by_title(title: str):
     problem_details["url"] = f"https://leetcode.com/problems/{title_slug}/"
     
     return problem_details
+
+@app.post("/api/generate-script", tags=["Testing"])
+async def generate_script_only(request: VideoRequest):
+    """
+    Generate only the Manim script without rendering video.
+    Useful for testing and debugging the script generation.
+    """
+    try:
+        # Fetch problem details
+        problem_details = await fetch_problem_details(request.problem_title)
+        
+        if not problem_details:
+            raise HTTPException(status_code=404, detail="Problem not found")
+        
+        # Generate placeholder solution code
+        solution_code = f"""
+def solution():
+    # Placeholder solution for {request.problem_title}
+    # Language: {request.language}
+    # Type: {request.video_type}
+    pass
+"""
+        
+        # Generate Manim script
+        script_content = manim_service.generate_script_only(
+            problem_details, 
+            solution_code, 
+            request.language, 
+            request.video_type
+        )
+        
+        return {
+            "problem_title": request.problem_title,
+            "language": request.language,
+            "video_type": request.video_type,
+            "script_content": script_content
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Script generation failed: {str(e)}")
+
+# Initialize services
+solution_generator = SolutionGenerator()
+manim_service = ManimVideoService()
 
 # Create videos directory if it doesn't exist
 os.makedirs("videos", exist_ok=True)
