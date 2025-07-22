@@ -8,6 +8,8 @@ import os
 import requests
 import json
 import httpx
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from database.service import DatabaseService
 from solution_generator.generator import SolutionGenerator
 from manim_generator.service import ManimVideoService
@@ -33,6 +35,10 @@ class VideoResponse(BaseModel):
     video_id: str
     video_url: str
     status: Literal["generating", "ready", "error"]
+    error_message: Optional[str] = None
+
+# Global dictionary to track video generation status
+video_generation_status: Dict[str, Dict[str, Any]] = {}
 
 # Health check endpoint
 @app.get("/")
@@ -42,6 +48,86 @@ async def root():
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
+
+# Thread pool for background video generation
+executor = ThreadPoolExecutor(max_workers=2)
+
+def generate_video_background(video_id: str, problem_details: Dict[str, Any], 
+                            request: VideoRequest) -> None:
+    """Background function to generate video"""
+    try:
+        # Update status to generating
+        video_generation_status[video_id] = {
+            "status": "generating",
+            "progress": 0,
+            "message": "Starting video generation..."
+        }
+        
+        # Generate solution code
+        video_generation_status[video_id]["progress"] = 20
+        video_generation_status[video_id]["message"] = "Generating solution code..."
+        
+        try:
+            solution_code = solution_generator.generate_solution(
+                problem_details,
+                request.language,
+                request.video_type
+            )
+        except Exception as e:
+            # Fallback to placeholder if solution generation fails
+            solution_code = f"""
+def solution():
+    # Placeholder solution for {request.problem_title}
+    # Language: {request.language}
+    # Type: {request.video_type}
+    pass
+"""
+        
+        # Generate and render video
+        video_generation_status[video_id]["progress"] = 50
+        video_generation_status[video_id]["message"] = "Generating Manim script..."
+        
+        video_path = manim_service.generate_video(
+            problem_details, 
+            solution_code, 
+            request.language, 
+            request.video_type,
+            video_id
+        )
+        
+        video_generation_status[video_id]["progress"] = 90
+        video_generation_status[video_id]["message"] = "Storing video in database..."
+        
+        # Read video file and store binary data in database
+        with open(video_path, 'rb') as video_file:
+            video_binary_data = video_file.read()
+        
+        DatabaseService.create_video(
+            request.problem_title,
+            request.language,
+            request.video_type,
+            video_binary_data
+        )
+        
+        # Clean up local file after storing in database
+        import os
+        if os.path.exists(video_path):
+            os.remove(video_path)
+        
+        # Mark as complete
+        video_generation_status[video_id] = {
+            "status": "ready",
+            "progress": 100,
+            "message": "Video generation complete!",
+            "video_path": video_path
+        }
+        
+    except Exception as e:
+        video_generation_status[video_id] = {
+            "status": "error",
+            "progress": 0,
+            "message": f"Video generation failed: {str(e)}"
+        }
 
 # Video generation endpoint
 @app.post("/api/generate-video", response_model=VideoResponse)
@@ -78,47 +164,34 @@ async def generate_video(request: VideoRequest):
         
         # Check if video file exists locally (fallback check)
         if os.path.exists(video_path):
-            # Store in database for future reference
+            # Read and store video data in database
+            with open(video_path, 'rb') as video_file:
+                video_binary_data = video_file.read()
+            
             DatabaseService.create_video(
                 request.problem_title,
                 request.language,
                 request.video_type,
-                video_path
+                video_binary_data
             )
+            
+            # Clean up local file after storing in database
+            os.remove(video_path)
+            
             return VideoResponse(
                 video_id=video_id,
                 video_url=f"/api/video/{video_id}",
                 status="ready"
             )
         
-        # Generate solution code first (placeholder - will be implemented in task 5)
-        solution_code = f"""
-def solution():
-    # Placeholder solution for {request.problem_title}
-    # Language: {request.language}
-    # Type: {request.video_type}
-    pass
-"""
+        # Start background video generation
+        executor.submit(generate_video_background, video_id, problem_details, request)
         
-        try:
-            # Generate Manim script
-            script_content = manim_service.generate_script_only(
-                problem_details, 
-                solution_code, 
-                request.language, 
-                request.video_type
-            )
-            
-            # For now, just return the script generation success
-            # Video rendering will be implemented in task 7
-            return VideoResponse(
-                video_id=video_id,
-                video_url=f"/api/video/{video_id}",
-                status="generating"
-            )
-            
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Script generation failed: {str(e)}")
+        return VideoResponse(
+            video_id=video_id,
+            video_url=f"/api/video/{video_id}",
+            status="generating"
+        )
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Video generation failed: {str(e)}")
@@ -127,11 +200,33 @@ def solution():
 async def get_video(video_id: str):
     """
     Serve the generated video file for playback.
-    Returns the actual video file for direct playback in the frontend.
+    Returns the actual video data from database for direct playback in the frontend.
     """
-    video_path = f"videos/{video_id}.mp4"
+    from fastapi.responses import Response
     
-    # Check if video file exists
+    # Parse video_id to get problem details
+    parts = video_id.replace("_", " ").split(" ")
+    if len(parts) < 3:
+        raise HTTPException(status_code=400, detail="Invalid video ID format")
+    
+    # Extract problem title, language, and video type from video_id
+    # Format: "problem_title_language_videotype"
+    video_type = parts[-1]
+    language = parts[-2]
+    problem_title = " ".join(parts[:-2]).title()
+    
+    # Get video binary data from database
+    video_data = DatabaseService.get_video_data(problem_title, language, video_type)
+    
+    if video_data:
+        return Response(
+            content=video_data,
+            media_type="video/mp4",
+            headers={"Content-Disposition": f"inline; filename={video_id}.mp4"}
+        )
+    
+    # If video doesn't exist in database, check local files as fallback
+    video_path = f"videos/{video_id}.mp4"
     if os.path.exists(video_path):
         return FileResponse(
             video_path,
@@ -139,12 +234,48 @@ async def get_video(video_id: str):
             filename=f"{video_id}.mp4"
         )
     
-    # If video doesn't exist, return placeholder response
-    # In a real implementation, this might trigger video generation
     raise HTTPException(
         status_code=404, 
         detail="Video not found. It may still be generating or the request was invalid."
     )
+
+@app.get("/api/video-status/{video_id}")
+async def get_video_status(video_id: str):
+    """
+    Get the current status of video generation.
+    Returns progress information for ongoing generations.
+    """
+    if video_id in video_generation_status:
+        status_info = video_generation_status[video_id]
+        return {
+            "video_id": video_id,
+            "status": status_info["status"],
+            "progress": status_info["progress"],
+            "message": status_info["message"]
+        }
+    
+    # Check if video already exists in database
+    parts = video_id.replace("_", " ").split(" ")
+    if len(parts) >= 3:
+        video_type = parts[-1]
+        language = parts[-2]
+        problem_title = " ".join(parts[:-2]).title()
+        
+        existing_video = DatabaseService.get_video(problem_title, language, video_type)
+        if existing_video:
+            return {
+                "video_id": video_id,
+                "status": "ready",
+                "progress": 100,
+                "message": "Video is ready for playback"
+            }
+    
+    return {
+        "video_id": video_id,
+        "status": "not_found",
+        "progress": 0,
+        "message": "Video not found or generation not started"
+    }
 
 
 

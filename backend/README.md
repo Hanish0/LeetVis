@@ -57,7 +57,15 @@ Get details of a problem by its title. First checks the database, then fetches f
 
 ## Database Setup
 
-This backend uses Supabase as the database. Follow these steps to set up:
+This backend uses Supabase as the database with **improved video storage**:
+
+### ✅ Key Features:
+- **Videos stored as binary data** in database (not file paths)
+- **Works across all deployments** - no broken file path issues
+- **Centralized storage** - videos accessible from any server instance
+- **Better security** - proper access control through database
+
+### Setup Steps:
 
 1. **Create a Supabase project:**
    - Go to [supabase.com](https://supabase.com) and create a free account
@@ -73,6 +81,12 @@ This backend uses Supabase as the database. Follow these steps to set up:
    python -m database.init
    ```
    - Copy and run the SQL commands in your Supabase SQL Editor
+
+### Video Storage Architecture:
+- Videos are stored as **base64-encoded binary data** in the database
+- No local file dependencies - works on any hosting platform
+- Videos served directly from database via `/api/video/{video_id}` endpoint
+- Automatic cleanup of temporary local files after database storage
 
 ## Local Development
 
