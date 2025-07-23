@@ -30,29 +30,29 @@ export default function ProgressBar({ isGenerating, onComplete }: ProgressBarPro
     let totalElapsed = 0;
     const totalDuration = steps.reduce((sum, step) => sum + step.duration, 0);
 
-    const updateProgress = () => {
+    const interval = setInterval(() => {
       if (currentStepIndex >= steps.length) {
         setProgress(100);
         setCurrentStep('Complete!');
         onComplete?.();
+        clearInterval(interval);
         return;
       }
 
       const currentStepData = steps[currentStepIndex];
       setCurrentStep(currentStepData.label);
 
+      // Progress is based on totalElapsed over all steps
       const stepProgress = Math.min(100, (totalElapsed / totalDuration) * 100);
       setProgress(stepProgress);
 
       totalElapsed += 100;
 
-      if (totalElapsed >= currentStepData.duration) {
+      // Move to next step if we've spent enough time on this step
+      if (totalElapsed > steps.slice(0, currentStepIndex + 1).reduce((sum, step) => sum + step.duration, 0)) {
         currentStepIndex++;
-        totalElapsed = 0;
       }
-    };
-
-    const interval = setInterval(updateProgress, 100);
+    }, 100);
 
     return () => clearInterval(interval);
   }, [isGenerating, onComplete, steps]);

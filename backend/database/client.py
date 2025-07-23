@@ -18,7 +18,7 @@ ACTIVE_KEY = SUPABASE_SERVICE_KEY if SUPABASE_SERVICE_KEY else SUPABASE_KEY
 if not SUPABASE_URL or not ACTIVE_KEY:
     raise ValueError("SUPABASE_URL and either SUPABASE_ANON_KEY or SUPABASE_SERVICE_KEY environment variables are required")
 
-print(f"Using {'service' if SUPABASE_SERVICE_KEY else 'anonymous'} key for Supabase")
+# Using service key if available for admin operations
 
 # Database table names
 VIDEOS_TABLE = "videos"

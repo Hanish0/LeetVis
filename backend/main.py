@@ -59,14 +59,17 @@ executor = ThreadPoolExecutor(max_workers=2)
 
 def generate_video_background(video_id: str, problem_details: Dict[str, Any], 
                             request: VideoRequest) -> None:
-    """Background function to generate video with proper error handling"""
+    """Background function to generate video with proper error handling and storage"""
     try:
+        title_slug = request.title_slug
+        
         # Update status to generating
         video_generation_status[video_id] = {
             "status": "generating",
             "progress": 0,
             "message": "Starting video generation..."
         }
+        print(f"Starting video generation for: {video_id}")
         
         # Generate solution code
         video_generation_status[video_id]["progress"] = 20
@@ -78,8 +81,9 @@ def generate_video_background(video_id: str, problem_details: Dict[str, Any],
                 request.language,
                 request.video_type
             )
+            print(f"Solution code generated successfully for: {video_id}")
         except Exception as e:
-            print(f"Solution generation failed: {e}")
+            print(f"Solution generation failed for {video_id}: {e}")
             video_generation_status[video_id] = {
                 "status": "error",
                 "progress": 0,
@@ -99,8 +103,9 @@ def generate_video_background(video_id: str, problem_details: Dict[str, Any],
                 request.video_type,
                 video_id
             )
+            print(f"Video rendered successfully at: {video_path}")
         except Exception as e:
-            print(f"Video rendering failed: {e}")
+            print(f"Video rendering failed for {video_id}: {e}")
             video_generation_status[video_id] = {
                 "status": "error",
                 "progress": 0,
@@ -108,49 +113,75 @@ def generate_video_background(video_id: str, problem_details: Dict[str, Any],
             }
             return
         
-        video_generation_status[video_id]["progress"] = 90
-        video_generation_status[video_id]["message"] = "Saving video..."
+        # Verify video file was created
+        if not os.path.exists(video_path):
+            print(f"Video file not found after generation: {video_path}")
+            video_generation_status[video_id] = {
+                "status": "error",
+                "progress": 0,
+                "message": "Video generation completed but file not found. Please try again."
+            }
+            return
+        
+        video_generation_status[video_id]["progress"] = 70
+        video_generation_status[video_id]["message"] = "Uploading video to storage..."
         
         # Upload video to Supabase Storage
+        storage_url = None
         try:
             storage_url = storage_service.upload_video(
                 video_path,
-                request.problem_title,
+                title_slug,  # Use normalized title_slug
                 request.language,
                 request.video_type
             )
             
             if not storage_url:
                 raise Exception("Upload returned no URL")
+            
+            print(f"Video uploaded to storage successfully: {storage_url}")
                 
         except Exception as e:
-            print(f"Storage upload failed: {e}")
+            print(f"Storage upload failed for {video_id}: {e}")
             video_generation_status[video_id] = {
                 "status": "error",
                 "progress": 0,
-                "message": "Video was created but couldn't be saved. Please try again."
+                "message": "Video was created but couldn't be saved to storage. Please try again."
             }
             return
         
+        video_generation_status[video_id]["progress"] = 90
+        video_generation_status[video_id]["message"] = "Saving video record to database..."
+        
         # Store video record in database with storage URL
         try:
-            DatabaseService.create_video(
-                request.problem_title,
+            video_record = DatabaseService.create_video(
+                title_slug,  # Use normalized title_slug
                 request.language,
                 request.video_type,
                 storage_url
             )
+            
+            if video_record:
+                print(f"Video record saved to database successfully: {video_record}")
+            else:
+                print(f"Warning: Video record creation returned None for {video_id}")
+                
         except Exception as e:
-            print(f"Database save failed: {e}")
-            # Video is uploaded but not in database - still usable
-            print("Video uploaded but database record failed - continuing...")
+            print(f"Database save failed for {video_id}: {e}")
+            # Video is uploaded to storage but not in database - still usable
+            print("Video uploaded to storage but database record failed - video still accessible")
+        
+        video_generation_status[video_id]["progress"] = 95
+        video_generation_status[video_id]["message"] = "Cleaning up temporary files..."
         
         # Clean up local file after uploading to storage
         try:
             if os.path.exists(video_path):
                 os.remove(video_path)
+                print(f"Local video file cleaned up: {video_path}")
         except Exception as e:
-            print(f"Cleanup failed: {e}")
+            print(f"Cleanup failed for {video_path}: {e}")
             # Not critical, continue
         
         # Mark as complete
@@ -161,8 +192,10 @@ def generate_video_background(video_id: str, problem_details: Dict[str, Any],
             "storage_url": storage_url
         }
         
+        print(f"Video generation completed successfully for: {video_id}")
+        
     except Exception as e:
-        print(f"Unexpected error in video generation: {e}")
+        print(f"Unexpected error in video generation for {video_id}: {e}")
         video_generation_status[video_id] = {
             "status": "error",
             "progress": 0,
@@ -174,57 +207,72 @@ async def generate_video(request: VideoRequest):
     """
     Generate a video for the given problem, language, and video type.
     Returns immediately with a video_id and status, while video generation happens in background.
+    Implements proper video caching by checking database before generation.
     """
     try:
         # Use normalized slug for all DB and ID operations
         title_slug = request.title_slug
-        # Check if video already exists in database
+        video_id = f"{title_slug}_{request.language}_{request.video_type}"
+        
+        # STEP 1: Check if video already exists in database (caching)
+        print(f"Checking database for existing video: {title_slug}, {request.language}, {request.video_type}")
         existing_video = DatabaseService.get_video(
             title_slug,
             request.language,
             request.video_type
         )
+        
         if existing_video:
-            video_id = f"{title_slug}_{request.language}_{request.video_type}"
+            print(f"Found existing video in database: {existing_video}")
             storage_url = existing_video.get('storage_url')
             if storage_url:
+                # Video exists and has valid storage URL - return immediately
+                print(f"Returning cached video with storage URL: {storage_url}")
                 return VideoResponse(
                     video_id=video_id,
                     video_url=storage_url,
                     status="ready"
                 )
             else:
-                raise HTTPException(status_code=500, detail="Video exists but no storage URL found")
+                # Video record exists but no storage URL - clean up and regenerate
+                print("Video record exists but no storage URL - cleaning up")
+                DatabaseService.delete_video(title_slug, request.language, request.video_type)
 
-        # Fetch problem details from LeetCode (placeholder implementation)
+        # STEP 2: Check if video is currently being generated
+        if video_id in video_generation_status:
+            current_status = video_generation_status[video_id]
+            if current_status["status"] == "generating":
+                print(f"Video is currently being generated: {video_id}")
+                return VideoResponse(
+                    video_id=video_id,
+                    video_url=f"/api/video-status/{video_id}",
+                    status="generating"
+                )
+            elif current_status["status"] == "ready" and "storage_url" in current_status:
+                # Generation completed but not yet stored in DB
+                print(f"Video generation completed, returning storage URL: {current_status['storage_url']}")
+                return VideoResponse(
+                    video_id=video_id,
+                    video_url=current_status["storage_url"],
+                    status="ready"
+                )
+
+        # STEP 3: Fetch problem details before starting generation
+        print(f"Fetching problem details for: {request.problem_title}")
         problem_details = await fetch_problem_details(request.problem_title)
         if not problem_details:
             raise HTTPException(status_code=404, detail="Problem not found")
 
-        video_id = f"{title_slug}_{request.language}_{request.video_type}"
-        video_path = f"videos/{video_id}.mp4"
-
-        if os.path.exists(video_path):
-            storage_url = storage_service.upload_video(
-                video_path,
-                title_slug,
-                request.language,
-                request.video_type
-            )
-            if storage_url:
-                DatabaseService.create_video(
-                    title_slug,
-                    request.language,
-                    request.video_type,
-                    storage_url
-                )
-
+        # STEP 4: Start background video generation
+        print(f"Starting background video generation for: {video_id}")
         executor.submit(generate_video_background, video_id, problem_details, request)
+        
         return VideoResponse(
             video_id=video_id,
             video_url=f"/api/video-status/{video_id}",
             status="generating"
         )
+        
     except HTTPException:
         # Re-raise HTTP exceptions as-is
         raise
@@ -246,95 +294,150 @@ async def generate_video(request: VideoRequest):
 async def get_video(video_id: str):
     """
     Serve the generated video file for playback.
-    Returns redirect to Supabase storage URL or serves from local files as fallback.
+    Returns redirect to Supabase storage URL with proper caching logic.
     """
     from fastapi.responses import RedirectResponse
     
-    # Parse video_id to get problem details
-    parts = video_id.replace("_", " ").split(" ")
-    if len(parts) < 3:
-        raise HTTPException(status_code=400, detail="Invalid video ID format")
-    
-    # Extract problem title, language, and video type from video_id
-    # Format: "problem_title_language_videotype"
-    video_type = parts[-1]
-    language = parts[-2]
-    problem_title = " ".join(parts[:-2]).title()
-    
-    # Get video record from database
-    video_record = DatabaseService.get_video(problem_title, language, video_type)
-    
-    if video_record and video_record.get('storage_url'):
-        storage_url = video_record['storage_url']
+    try:
+        # Parse video_id to get problem details
+        parts = video_id.split("_")
+        if len(parts) < 3:
+            raise HTTPException(status_code=400, detail="Invalid video ID format")
         
-        # Check if it's a full URL (public bucket) or just filename (private bucket)
-        if storage_url.startswith('http'):
-            # Public bucket - redirect directly
-            return RedirectResponse(url=storage_url)
-        else:
-            # Private bucket - generate signed URL
-            signed_url = storage_service.get_signed_url(storage_url, expires_in=3600)
-            if signed_url:
-                return RedirectResponse(url=signed_url)
+        # Extract problem title, language, and video type from video_id
+        # Format: "problem_title_language_videotype"
+        video_type = parts[-1]
+        language = parts[-2]
+        title_slug = "_".join(parts[:-2])  # Keep as slug format
+        
+        print(f"Looking for video: title_slug={title_slug}, language={language}, video_type={video_type}")
+        
+        # Get video record from database (primary source)
+        video_record = DatabaseService.get_video(title_slug, language, video_type)
+        
+        if video_record and video_record.get('storage_url'):
+            storage_url = video_record['storage_url']
+            print(f"Found video in database with storage URL: {storage_url}")
+            
+            # Check if it's a full URL (public bucket) or just filename (private bucket)
+            if storage_url.startswith('http'):
+                # Public bucket - redirect directly
+                return RedirectResponse(url=storage_url)
             else:
-                raise HTTPException(status_code=500, detail="Failed to generate video access URL")
-    
-
-    
-    raise HTTPException(
-        status_code=404, 
-        detail="Video not found. It may still be generating or the request was invalid."
-    )
+                # Private bucket - generate signed URL
+                try:
+                    signed_url = storage_service.get_signed_url(storage_url, expires_in=3600)
+                    if signed_url:
+                        return RedirectResponse(url=signed_url)
+                    else:
+                        print(f"Failed to generate signed URL for: {storage_url}")
+                        raise HTTPException(status_code=500, detail="Failed to generate video access URL")
+                except Exception as e:
+                    print(f"Error generating signed URL: {e}")
+                    raise HTTPException(status_code=500, detail="Failed to generate video access URL")
+        
+        # Check if video is currently being generated
+        if video_id in video_generation_status:
+            status_info = video_generation_status[video_id]
+            if status_info["status"] == "ready" and "storage_url" in status_info:
+                # Video generation completed but may not be in database yet
+                storage_url = status_info["storage_url"]
+                print(f"Found video in generation status with storage URL: {storage_url}")
+                return RedirectResponse(url=storage_url)
+            elif status_info["status"] == "generating":
+                raise HTTPException(
+                    status_code=202, 
+                    detail="Video is still being generated. Please check status endpoint."
+                )
+            elif status_info["status"] == "error":
+                raise HTTPException(
+                    status_code=500, 
+                    detail="Video generation failed. Please try generating again."
+                )
+        
+        # Video not found anywhere
+        raise HTTPException(
+            status_code=404, 
+            detail="Video not found. It may still be generating or the request was invalid."
+        )
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except Exception as e:
+        print(f"Unexpected error in get_video: {e}")
+        raise HTTPException(status_code=500, detail="Error retrieving video")
 
 @app.get("/api/video-status/{video_id}")
 async def get_video_status(video_id: str):
     """
-    Get the current status of video generation.
-    Returns progress information for ongoing generations.
+    Get the current status of video generation with proper caching logic.
+    Returns progress information for ongoing generations or cached video status.
     """
-    if video_id in video_generation_status:
-        status_info = video_generation_status[video_id]
-        response = {
-            "video_id": video_id,
-            "status": status_info["status"],
-            "progress": status_info["progress"],
-            "message": status_info["message"]
-        }
-        
-        # Include storage URL if video is ready
-        if status_info["status"] == "ready" and "storage_url" in status_info:
-            response["video_url"] = status_info["storage_url"]
-        
-        return response
-    
-    # Check if video already exists in database
-    parts = video_id.replace("_", " ").split(" ")
-    if len(parts) >= 3:
-        video_type = parts[-1]
-        language = parts[-2]
-        problem_title = " ".join(parts[:-2]).title()
-        
-        existing_video = DatabaseService.get_video(problem_title, language, video_type)
-        if existing_video:
+    try:
+        # Check if video is currently being generated
+        if video_id in video_generation_status:
+            status_info = video_generation_status[video_id]
             response = {
                 "video_id": video_id,
-                "status": "ready",
-                "progress": 100,
-                "message": "Video is ready for playback"
+                "status": status_info["status"],
+                "progress": status_info["progress"],
+                "message": status_info["message"]
             }
             
-            # Include storage URL if available
-            if existing_video.get('storage_url'):
-                response["video_url"] = existing_video['storage_url']
+            # Include storage URL if video is ready
+            if status_info["status"] == "ready" and "storage_url" in status_info:
+                response["video_url"] = status_info["storage_url"]
             
             return response
-    
-    return {
-        "video_id": video_id,
-        "status": "not_found",
-        "progress": 0,
-        "message": "Video not found or generation not started"
-    }
+        
+        # Parse video_id to check database for existing video
+        parts = video_id.split("_")
+        if len(parts) >= 3:
+            video_type = parts[-1]
+            language = parts[-2]
+            title_slug = "_".join(parts[:-2])  # Keep as slug format
+            
+            print(f"Checking database for video status: {title_slug}, {language}, {video_type}")
+            
+            existing_video = DatabaseService.get_video(title_slug, language, video_type)
+            if existing_video:
+                print(f"Found existing video in database: {existing_video}")
+                response = {
+                    "video_id": video_id,
+                    "status": "ready",
+                    "progress": 100,
+                    "message": "Video is ready for playback (cached)"
+                }
+                
+                # Include storage URL if available
+                storage_url = existing_video.get('storage_url')
+                if storage_url:
+                    response["video_url"] = storage_url
+                else:
+                    # Video record exists but no storage URL - mark as error
+                    response["status"] = "error"
+                    response["progress"] = 0
+                    response["message"] = "Video record found but storage URL missing"
+                
+                return response
+        
+        # Video not found in generation status or database
+        return {
+            "video_id": video_id,
+            "status": "not_found",
+            "progress": 0,
+            "message": "Video not found or generation not started"
+        }
+        
+    except Exception as e:
+        print(f"Error in get_video_status for {video_id}: {e}")
+        return {
+            "video_id": video_id,
+            "status": "error",
+            "progress": 0,
+            "message": "Error checking video status"
+        }
 
 
 
@@ -508,13 +611,71 @@ async def delete_video(video_id: str):
 @app.get("/api/videos")
 async def list_videos():
     """
-    List all videos stored in Supabase storage.
+    List all videos stored in database with caching information.
     """
     try:
-        videos = storage_service.list_videos()
-        return {"videos": videos}
+        # Get videos from storage service
+        storage_videos = storage_service.list_videos()
+        
+        # Get videos from database
+        db_videos = DatabaseService.get_all_videos()
+        
+        return {
+            "storage_videos": storage_videos,
+            "database_videos": db_videos,
+            "total_cached": len(db_videos) if db_videos else 0
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list videos: {str(e)}")
+
+@app.get("/api/cache/stats")
+async def get_cache_stats():
+    """
+    Get statistics about video caching.
+    """
+    try:
+        db_videos = DatabaseService.get_all_videos()
+        
+        stats = {
+            "total_cached_videos": len(db_videos) if db_videos else 0,
+            "videos_by_language": {},
+            "videos_by_type": {},
+            "recent_videos": []
+        }
+        
+        if db_videos:
+            # Count by language
+            for video in db_videos:
+                lang = video.get('language', 'unknown')
+                stats["videos_by_language"][lang] = stats["videos_by_language"].get(lang, 0) + 1
+            
+            # Count by video type
+            for video in db_videos:
+                vtype = video.get('video_type', 'unknown')
+                stats["videos_by_type"][vtype] = stats["videos_by_type"].get(vtype, 0) + 1
+            
+            # Get recent videos (last 10)
+            sorted_videos = sorted(db_videos, key=lambda x: x.get('created_at', ''), reverse=True)
+            stats["recent_videos"] = sorted_videos[:10]
+        
+        return stats
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get cache stats: {str(e)}")
+
+@app.post("/api/cache/clear")
+async def clear_cache():
+    """
+    Clear video cache (for testing purposes).
+    WARNING: This will delete all video records from database but not from storage.
+    """
+    try:
+        success = DatabaseService.clear_all_videos()
+        if success:
+            return {"message": "Video cache cleared successfully"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to clear cache")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to clear cache: {str(e)}")
 
 @app.post("/api/generate-script", tags=["Testing"])
 async def generate_script_only(request: VideoRequest):

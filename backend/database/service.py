@@ -115,6 +115,29 @@ class DatabaseService:
         except Exception as e:
             print(f"Error creating problem from LeetCode data: {e}")
             return None
+    
+    @staticmethod
+    def get_all_videos() -> Optional[list]:
+        """Get all video records from the database"""
+        try:
+            response = db_client.get_client().table(VIDEOS_TABLE).select("*").order("created_at", desc=True).execute()
+            
+            if response.data:
+                return response.data
+            return []
+        except Exception as e:
+            print(f"Error getting all videos: {e}")
+            return None
+    
+    @staticmethod
+    def clear_all_videos() -> bool:
+        """Clear all video records from the database (for testing)"""
+        try:
+            response = db_client.get_client().table(VIDEOS_TABLE).delete().neq("id", 0).execute()
+            return True
+        except Exception as e:
+            print(f"Error clearing all videos: {e}")
+            return False
 
 if __name__ == "__main__":
     print("Database Service initialized successfully!")

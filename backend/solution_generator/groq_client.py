@@ -4,8 +4,7 @@ Groq Cloud API client for intelligent solution generation.
 
 import os
 from groq import Groq
-from typing import Dict, Any, Optional
-import json
+from typing import Dict, Any
 
 class GroqSolutionClient:
     """Client for generating solutions using Groq Cloud API"""
@@ -59,8 +58,8 @@ class GroqSolutionClient:
     
     def _get_system_prompt(self, language: str, video_type: str) -> str:
         """Get system prompt based on language and video type"""
-        
-        base_prompt = f"""You are an expert competitive programmer and coding instructor. 
+        base_prompt = f"""
+You are an expert competitive programmer and coding instructor.
 Generate clean, well-commented {language} code for LeetCode problems.
 
 Requirements:
@@ -69,13 +68,15 @@ Requirements:
 - Add time and space complexity analysis
 - Include test cases and example usage
 - Follow {language} best practices and conventions
+- For problem explanations, always provide a visual breakdown of what the problem is asking (use diagrams, step-by-step visuals, or clear breakdowns).
+- For code explanations, always dry run the code and show how data structures change at each step, with a step-by-step walkthrough of the logic.
 """
-        
         if video_type == "explanation":
             return base_prompt + """
 Focus on educational clarity:
 - Step-by-step explanation in comments
-- Break down the problem-solving approach
+- Break down the problem-solving approach visually
+- Use diagrams or tables to show what the problem is asking
 - Explain why this solution works
 - Include multiple examples
 """
@@ -86,6 +87,7 @@ Implement a brute force solution:
 - May not be the most efficient
 - Clearly explain the brute force logic
 - Mention time complexity limitations
+- Dry run the code and show how data structures change at each step
 """
         elif video_type == "optimal":
             return base_prompt + """
@@ -94,13 +96,12 @@ Implement the most efficient solution:
 - Minimize time and space complexity
 - Explain optimization techniques used
 - Compare with brute force approach
+- Dry run the code and show how data structures change at each step
 """
-        
         return base_prompt
     
     def _build_prompt(self, problem_data: Dict[str, Any], language: str, video_type: str) -> str:
         """Build the user prompt with problem details"""
-        
         prompt = f"""
 Problem Title: {problem_data.get('title', 'Unknown')}
 Difficulty: {problem_data.get('difficulty', 'Unknown')}
@@ -110,16 +111,14 @@ Problem Description:
 {problem_data.get('content', 'No description available')[:1000]}
 
 """
-        
         # Add constraints if available
         if problem_data.get('constraints'):
-            prompt += f"\nConstraints:\n"
+            prompt += "\nConstraints:\n"
             for constraint in problem_data.get('constraints', [])[:3]:
                 prompt += f"- {constraint}\n"
-        
         # Add examples if available
         if problem_data.get('examples'):
-            prompt += f"\nExamples:\n"
+            prompt += "\nExamples:\n"
             for i, example in enumerate(problem_data.get('examples', [])[:2], 1):
                 prompt += f"Example {i}:\n"
                 if example.get('input'):
@@ -129,15 +128,12 @@ Problem Description:
                 if example.get('explanation'):
                     prompt += f"Explanation: {example['explanation']}\n"
                 prompt += "\n"
-        
         # Add algorithm hints if detected
         if problem_data.get('algorithms'):
             prompt += f"\nSuggested Algorithms: {', '.join(problem_data.get('algorithms', []))}\n"
-        
         # Add data structure hints if detected
         if problem_data.get('data_structures'):
             prompt += f"Relevant Data Structures: {', '.join(problem_data.get('data_structures', []))}\n"
-        
         prompt += f"""
 Generate a complete {language} solution for the {video_type} approach.
 Include:
@@ -146,9 +142,10 @@ Include:
 3. Time and space complexity analysis
 4. Test cases
 5. Example usage
+6. For problem explanations, visually show what the problem is asking (use diagrams, tables, or step-by-step visuals).
+7. For code explanations, dry run the code and show how data structures change at each step, with a step-by-step walkthrough of the logic.
 
 Make sure the code is ready to run and follows best practices.
 """
-        
         return prompt
     

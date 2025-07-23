@@ -63,8 +63,8 @@ class GroqManimScriptClient:
     
     def _get_system_prompt(self, video_type: str) -> str:
         """Get system prompt based on video type"""
-        
-        base_prompt = """You are an expert Manim animator and coding instructor. 
+        base_prompt = """
+You are an expert Manim animator and coding instructor.
 Generate complete, working Manim scripts for LeetCode problem explanations.
 
 Requirements:
@@ -76,6 +76,8 @@ Requirements:
 - Ensure the script is syntactically correct and runnable
 - Include proper wait times between animations
 - Use Text, Code, VGroup, and other Manim objects effectively
+- For problem explanations, always visually show what the problem is asking (use diagrams, step-by-step visuals, or clear breakdowns).
+- For code explanations, always dry run the code and show how data structures change at each step, with a step-by-step walkthrough of the logic.
 
 Important Manim Guidelines:
 - Always import: from manim import *
@@ -88,13 +90,12 @@ Important Manim Guidelines:
 - Use VGroup() to group related elements
 - Use proper positioning with next_to(), shift(), etc.
 """
-        
         if video_type == "explanation":
             return base_prompt + """
 Create an educational explanation video:
 - Start with problem title and difficulty
-- Explain the problem statement clearly
-- Break down the approach step by step
+- Explain the problem statement clearly and visually
+- Break down the approach step by step with diagrams or animations
 - Show the solution code with syntax highlighting
 - Include complexity analysis
 - Use visual examples and diagrams where helpful
@@ -109,6 +110,7 @@ Create a brute force solution video:
 - Highlight the time complexity issues
 - Compare with optimal solutions
 - Use animations to show all possible combinations being checked
+- Dry run the code and show how data structures change at each step
 """
         elif video_type == "optimal":
             return base_prompt + """
@@ -119,8 +121,8 @@ Create an optimal solution video:
 - Use visual elements to demonstrate efficiency gains
 - Highlight clever data structures or algorithms used
 - Include performance analysis
+- Dry run the code and show how data structures change at each step
 """
-        
         return base_prompt
     
     def _build_prompt(self, problem_data: Dict[str, Any], solution_code: str, 

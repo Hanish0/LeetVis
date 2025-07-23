@@ -36,8 +36,6 @@ class SupabaseStorageService:
             
             # Fallback to auto-detection if specific S3 vars not set
             if not all([access_key_id, secret_access_key, endpoint_url]):
-                print("🔄 S3 credentials not found, auto-detecting from Supabase settings...")
-                
                 supabase_url = os.getenv("SUPABASE_URL")
                 if not supabase_url:
                     raise ValueError("SUPABASE_URL not found")
@@ -51,10 +49,6 @@ class SupabaseStorageService:
             if not secret_access_key:
                 raise ValueError("No service key found for S3 authentication")
             
-            print(f"🔗 S3 Endpoint: {endpoint_url}")
-            print(f"🔑 Access Key: {access_key_id}")
-            print(f"🌍 Region: {region}")
-            
             s3_client = boto3.client(
                 's3',
                 endpoint_url=endpoint_url,
@@ -66,28 +60,17 @@ class SupabaseStorageService:
                 )
             )
             
-            print(f"✅ S3 client created for Supabase Storage")
             return s3_client
             
         except Exception as e:
-            print(f"❌ Failed to create S3 client: {e}")
-            print("   Falling back to Supabase client")
             return None
     
     def _ensure_bucket_exists(self):
         """Ensure the videos bucket exists in Supabase Storage"""
-        print(f"🔍 Checking storage bucket '{self.BUCKET_NAME}'...")
-        
         # For S3-authenticated storage, we'll skip the bucket existence check
         # and let the upload operation handle bucket validation
         # This avoids authentication issues with bucket listing operations
-        
-        print(f"📝 Note: Using S3-authenticated storage")
-        print(f"   Bucket operations will be validated during upload")
-        print(f"   If bucket doesn't exist, upload will fail with clear error")
-        
-        # We'll validate bucket access during the first upload attempt
-        # This is more reliable than trying to list/get bucket info with limited permissions
+        pass
     
     def upload_video(self, video_path: str, problem_title: str, language: str, video_type: str) -> Optional[str]:
         """
@@ -108,7 +91,7 @@ class SupabaseStorageService:
             safe_title = problem_title.lower().replace(" ", "_").replace("-", "_")
             filename = f"{safe_title}_{language}_{video_type}_{timestamp}.mp4"
             
-            print(f"📤 Uploading {filename} to Supabase Storage...")
+            # Uploading video to storage
             
             # Try S3 upload first if S3 client is available
             if self.s3_client:
@@ -130,16 +113,15 @@ class SupabaseStorageService:
                     project_ref = supabase_url.split("//")[1].split(".")[0]
                     public_url = f"{supabase_url}/storage/v1/object/public/{self.BUCKET_NAME}/{filename}"
                     
-                    print(f"✅ Video uploaded successfully via S3: {filename}")
-                    print(f"🌐 Public URL: {public_url}")
+                    # Video uploaded successfully
                     return public_url
                     
                 except ClientError as e:
-                    print(f"❌ S3 upload failed: {e}")
-                    print("   Falling back to Supabase client...")
+                    # S3 upload failed, falling back to Supabase client
+                    pass
                 except Exception as e:
-                    print(f"❌ S3 upload error: {e}")
-                    print("   Falling back to Supabase client...")
+                    # S3 upload error, falling back to Supabase client
+                    pass
             
             # Fallback to Supabase client
             with open(video_path, 'rb') as video_file:
@@ -157,11 +139,11 @@ class SupabaseStorageService:
             
             if response and not response.get('error'):
                 public_url = self.client.storage.from_(self.BUCKET_NAME).get_public_url(filename)
-                print(f"✅ Video uploaded successfully via Supabase client: {filename}")
+                # Video uploaded successfully via Supabase client
                 return public_url
             else:
                 error_msg = response.get('error', 'Unknown error') if response else 'No response'
-                print(f"❌ Supabase client upload failed: {error_msg}")
+                # Supabase client upload failed
                 return None
             
         except Exception as e:
@@ -210,29 +192,29 @@ class SupabaseStorageService:
             # Extract filename from URL
             filename = storage_url.split('/')[-1]
             
-            print(f"🗑️  Deleting {filename} from Supabase Storage...")
+            # Deleting video from storage
             
             # Try S3 delete first if S3 client is available
             if self.s3_client:
                 try:
                     self.s3_client.delete_object(Bucket=self.BUCKET_NAME, Key=filename)
-                    print(f"✅ Video deleted successfully via S3: {filename}")
+                    # Video deleted successfully
                     return True
                 except ClientError as e:
-                    print(f"❌ S3 delete failed: {e}")
-                    print("   Falling back to Supabase client...")
+                    # S3 delete failed, falling back to Supabase client
+                    pass
                 except Exception as e:
-                    print(f"❌ S3 delete error: {e}")
-                    print("   Falling back to Supabase client...")
+                    # S3 delete error, falling back to Supabase client
+                    pass
             
             # Fallback to Supabase client
             response = self.client.storage.from_(self.BUCKET_NAME).remove([filename])
             
             if response:
-                print(f"✅ Video deleted successfully via Supabase client: {filename}")
+                # Video deleted successfully via Supabase client
                 return True
             else:
-                print(f"❌ Supabase client delete failed")
+                # Supabase client delete failed
                 return False
             
         except Exception as e:
@@ -283,6 +265,4 @@ class SupabaseStorageService:
 storage_service = SupabaseStorageService()
 
 if __name__ == "__main__":
-    print("Supabase Storage Service initialized successfully!")
-    print(f"Bucket name: {storage_service.BUCKET_NAME}")
-    print("Storage service is ready to use.")
+    print(f"Storage service ready - bucket: {storage_service.BUCKET_NAME}")
