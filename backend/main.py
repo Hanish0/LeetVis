@@ -169,6 +169,12 @@ def generate_video_background(video_id: str, problem_details: Dict[str, Any],
             "message": "Something went wrong while creating your video. Our team has been notified."
         }
 
+@app.post("/api/generate-video")
+async def generate_video(request: VideoRequest):
+    """
+    Generate a video for the given problem, language, and video type.
+    Returns immediately with a video_id and status, while video generation happens in background.
+    """
     try:
         # Use normalized slug for all DB and ID operations
         title_slug = request.title_slug
@@ -219,12 +225,6 @@ def generate_video_background(video_id: str, problem_details: Dict[str, Any],
             video_url=f"/api/video-status/{video_id}",
             status="generating"
         )
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"Unexpected error in generate_video: {e}")
-        raise
-        
     except HTTPException:
         # Re-raise HTTP exceptions as-is
         raise

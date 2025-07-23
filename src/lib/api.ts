@@ -75,6 +75,15 @@ export const api = {
     return `${API_BASE_URL}/api/video/${videoId}`;
   },
 
+  // Check video generation status
+  async checkVideoStatus(videoId: string): Promise<VideoResponse> {
+    const response = await fetch(`${API_BASE_URL}/api/video-status/${videoId}`);
+    if (!response.ok) {
+      throw new ApiError(response.status, 'Failed to check video status');
+    }
+    return response.json();
+  },
+
   // Test backend connection
   async testConnection(): Promise<boolean> {
     try {

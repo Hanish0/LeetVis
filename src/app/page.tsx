@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { api, VideoRequest, VideoResponse, ApiError } from '@/lib/api';
+import ProgressBar from '@/components/ProgressBar';
+import VideoPlayer from '@/components/VideoPlayer';
 
 export default function Home() {
   const [problemTitle, setProblemTitle] = useState('');
@@ -48,6 +50,49 @@ export default function Home() {
     return true;
   };
 
+  const pollVideoStatus = async (videoId: string) => {
+    const maxAttempts = 60; // Poll for up to 5 minutes (60 * 5 seconds)
+    let attempts = 0;
+
+    const poll = async (): Promise<void> => {
+      try {
+        attempts++;
+        const statusResponse = await api.checkVideoStatus(videoId);
+        setVideoResponse(statusResponse);
+
+        if (statusResponse.status === 'ready') {
+          setIsGenerating(false);
+          return;
+        }
+
+        if (statusResponse.status === 'error') {
+          setError('Video generation failed during processing.');
+          setIsGenerating(false);
+          return;
+        }
+
+        // Continue polling if still generating and haven't exceeded max attempts
+        if (statusResponse.status === 'generating' && attempts < maxAttempts) {
+          setTimeout(poll, 5000); // Poll every 5 seconds
+        } else if (attempts >= maxAttempts) {
+          setError('Video generation is taking longer than expected. Please try again later.');
+          setIsGenerating(false);
+        }
+      } catch (err) {
+        console.error('Error polling video status:', err);
+        if (attempts < maxAttempts) {
+          setTimeout(poll, 5000); // Retry polling
+        } else {
+          setError('Failed to check video generation status.');
+          setIsGenerating(false);
+        }
+      }
+    };
+
+    // Start polling after a short delay
+    setTimeout(poll, 2000);
+  };
+
   const handleGenerateVideo = async () => {
     if (!canGenerateVideo()) {
       setError('Please fill in all required fields');
@@ -70,6 +115,13 @@ export default function Home() {
 
       if (response.status === 'error') {
         setError('Video generation failed. Please check your input or try again later.');
+        setIsGenerating(false);
+      } else if (response.status === 'generating') {
+        // Start polling for status updates
+        pollVideoStatus(response.video_id);
+      } else if (response.status === 'ready') {
+        // Video is already ready
+        setIsGenerating(false);
       }
     } catch (err: unknown) {
       if (err instanceof ApiError) {
@@ -86,7 +138,6 @@ export default function Home() {
       } else {
         setError('Failed to connect to backend. Please check your network and try again.');
       }
-    } finally {
       setIsGenerating(false);
     }
   };
@@ -248,17 +299,14 @@ export default function Home() {
             </div>
           )}
 
-          {/* Loading State */}
-          {isGenerating && (
-            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-8 mb-8">
-              <div className="text-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                <div className="text-blue-800 dark:text-blue-200">
-                  Generating video... This may take a moment.
-                </div>
-              </div>
-            </div>
-          )}
+          {/* Progress Bar */}
+          <ProgressBar 
+            isGenerating={isGenerating} 
+            onComplete={() => {
+              // Progress bar completed, but we still need to wait for actual API response
+              console.log('Progress simulation completed');
+            }}
+          />
 
 
 
@@ -270,19 +318,17 @@ export default function Home() {
               </h2>
 
               {videoResponse.status === 'ready' && (
-                <div className="text-center">
-                  <div className="mb-4">
-                    <div className="text-green-600 dark:text-green-400 mb-2">
+                <div>
+                  <div className="text-center mb-4">
+                    <div className="text-green-600 dark:text-green-400 mb-4">
                       ✅ Video is ready!
                     </div>
-                    <video
-                      controls
-                      className="w-full max-w-2xl mx-auto rounded-lg"
-                      src={api.getVideoUrl(videoResponse.video_id)}
-                    >
-                      Your browser does not support the video tag.
-                    </video>
                   </div>
+                  <VideoPlayer
+                    videoUrl={api.getVideoUrl(videoResponse.video_id)}
+                    title={`${problemTitle} - ${selectedVideoType?.replace('_', ' ').toUpperCase()} (${language?.toUpperCase()})`}
+                    onError={(error) => setError(`Video playback error: ${error}`)}
+                  />
                 </div>
               )}
 
