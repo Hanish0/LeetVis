@@ -61,7 +61,7 @@ export default function Home() {
     try {
       const request: VideoRequest = {
         problem_title: problemTitle.trim(),
-        language: selectedVideoType === 'explanation' ? 'python' : language, // Default to python for explanation
+        language: selectedVideoType === 'explanation' ? 'python' : language,
         video_type: selectedVideoType!
       };
 
@@ -69,13 +69,22 @@ export default function Home() {
       setVideoResponse(response);
 
       if (response.status === 'error') {
-        setError('Video generation failed');
+        setError('Video generation failed. Please check your input or try again later.');
       }
-    } catch (err) {
+    } catch (err: unknown) {
       if (err instanceof ApiError) {
-        setError(`Error ${err.status}: ${err.message}`);
+        // Show more details and suggest retry for server/network errors
+        if (err.status >= 500) {
+          setError(`Server error (${err.status}): ${err.message}. Please try again.`);
+        } else if (err.status === 429) {
+          setError(`Rate limit exceeded. Please wait and try again.`);
+        } else if (err.status === 400) {
+          setError(`Bad request: ${err.message}. Please check your input.`);
+        } else {
+          setError(`Error ${err.status}: ${err.message}`);
+        }
       } else {
-        setError('Failed to connect to backend. Please try again.');
+        setError('Failed to connect to backend. Please check your network and try again.');
       }
     } finally {
       setIsGenerating(false);
@@ -227,6 +236,14 @@ export default function Home() {
             <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 mb-8">
               <div className="text-red-800 dark:text-red-200">
                 <strong>Error:</strong> {error}
+                {error.includes('try again') && (
+                  <button
+                    className="ml-4 px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+                    onClick={() => handleGenerateVideo()}
+                  >
+                    Retry
+                  </button>
+                )}
               </div>
             </div>
           )}

@@ -32,21 +32,42 @@ export const api = {
   },
 
   // Generate video endpoint
-  async generateVideo(request: VideoRequest): Promise<VideoResponse> {
-    const response = await fetch(`${API_BASE_URL}/api/generate-video`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(request),
-    });
+  async generateVideo(request: VideoRequest, maxRetries = 2): Promise<VideoResponse> {
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/generate-video`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(request),
+        });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
-      throw new ApiError(response.status, errorData.detail || 'Video generation failed');
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
+          // If 5xx, retry
+          if (response.status >= 500 && attempt < maxRetries) {
+            lastError = new ApiError(response.status, errorData.detail || 'Server error, retrying...');
+            continue;
+          }
+          throw new ApiError(response.status, errorData.detail || 'Video generation failed');
+        }
+
+        return response.json();
+      } catch (err) {
+        lastError = err;
+        // Retry on network errors
+        if (attempt < maxRetries) continue;
+        // If lastError is an Error, throw as is, else wrap in ApiError
+        if (lastError instanceof Error) {
+          throw lastError;
+        } else {
+          throw new ApiError(500, 'Unknown error');
+        }
+      }
     }
-
-    return response.json();
+    throw lastError || new ApiError(500, 'Unknown error');
   },
 
   // Get video URL for playback
