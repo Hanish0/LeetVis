@@ -8,3 +8,4 @@ supabase==1.0.3
 python-dotenv==1.0.0
 groq
 manim
+boto3

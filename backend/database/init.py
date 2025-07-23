@@ -26,15 +26,15 @@ CREATE INDEX IF NOT EXISTS idx_problems_title ON problems(title);
 CREATE INDEX IF NOT EXISTS idx_problems_title_slug ON problems(title_slug);
 """
     
-    # Videos table with binary data storage
+    # Videos table with Supabase Storage URLs
     videos_sql = """
--- Create videos table (stores actual video data, not file paths)
+-- Create videos table (stores Supabase Storage URLs only)
 CREATE TABLE IF NOT EXISTS videos (
     id SERIAL PRIMARY KEY,
     problem_title VARCHAR(255) NOT NULL,
     language VARCHAR(20) NOT NULL CHECK (language IN ('python', 'java', 'cpp')),
     video_type VARCHAR(20) NOT NULL CHECK (video_type IN ('explanation', 'brute_force', 'optimal')),
-    video_data TEXT NOT NULL,  -- Base64 encoded video data
+    storage_url TEXT NOT NULL,  -- Supabase Storage public URL
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     
     -- Ensure unique combination of problem, language, and video type
@@ -44,24 +44,27 @@ CREATE TABLE IF NOT EXISTS videos (
 -- Create indexes for faster video lookups
 CREATE INDEX IF NOT EXISTS idx_videos_lookup ON videos(problem_title, language, video_type);
 CREATE INDEX IF NOT EXISTS idx_videos_created_at ON videos(created_at);
+CREATE INDEX IF NOT EXISTS idx_videos_storage_url ON videos(storage_url);
 """
     
     print(problems_sql)
     print(videos_sql)
     
     print("\n=== Key Improvements ===")
-    print("✅ Videos stored as binary data (base64) in database")
-    print("✅ No file path dependencies - works across all deployments")
+    print("✅ Videos stored exclusively in Supabase Storage")
+    print("✅ Clean database schema with storage URLs only")
+    print("✅ Efficient video streaming via CDN")
     print("✅ Proper constraints and indexes for performance")
     print("✅ Unique constraints prevent duplicate videos")
-    print("✅ Videos served directly from database")
+    print("✅ Automatic bucket creation and management")
     
     print("\n=== Benefits ===")
-    print("• Videos accessible from any deployment environment")
-    print("• No broken file path issues")
-    print("• Centralized video storage")
-    print("• Better security and access control")
-    print("• Scalable across multiple server instances")
+    print("• High-performance video streaming via Supabase CDN")
+    print("• Cost-effective storage separate from database")
+    print("• Global video distribution and caching")
+    print("• Scalable storage without database limitations")
+    print("• Clean, maintainable codebase")
+    print("• Automatic video file management and cleanup")
 
 if __name__ == "__main__":
     print_database_schema()
